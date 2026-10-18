@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Friday</title>
+<style>
+  body { margin:0; background:#050a07; color:#c8ffd9; font-family:system-ui,sans-serif; display:flex; flex-direction:column; height:100vh; }
+  h1 { margin:0; padding:14px; font-size:18px; color:#00ff88; letter-spacing:3px; text-align:center; }
+  #log { flex:1; overflow-y:auto; padding:12px; }
+  .msg { margin:8px 0; padding:10px 12px; border-radius:12px; max-width:85%; white-space:pre-wrap; }
+  .user { background:#0d2a1a; margin-left:auto; }
+  .bot { background:#101a14; border:1px solid #00ff8844; }
+  #bar { display:flex; gap:8px; padding:10px; }
+  #input { flex:1; padding:12px; border-radius:10px; border:1px solid #00ff8855; background:#0a120d; color:#c8ffd9; font-size:16px; }
+  button { padding:12px 16px; border:0; border-radius:10px; background:#00ff88; color:#031008; font-weight:700; }
+</style>
+</head>
+<body>
+<h1>F R I D A Y</h1>
+<div id="log"></div>
+<div id="bar">
+  <input id="input" placeholder="Talk to Friday..." autocomplete="off">
+  <button id="send">Send</button>
+</div>
+<script>
+  const log = document.getElementById("log");
+  const input = document.getElementById("input");
+  const history = [];
+
+  function add(text, cls) {
+    const d = document.createElement("div");
+    d.className = "msg " + cls;
+    d.textContent = text;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
+    return d;
+  }
+
+  async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    add(text, "user");
+    history.push({ role: "user", content: text });
+    const thinking = add("...", "bot");
+    try {
+      const r = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history }),
+      });
+      const data = await r.json();
+      const reply = data.reply || data.error || "No response.";
+      thinking.textContent = reply;
+      if (data.reply) history.push({ role: "assistant", content: reply });
+    } catch (e) {
+      thinking.textContent = "Connection lost.";
+    }
+  }
+
+  document.getElementById("send").onclick = send;
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+</script>
+</body>
+</html>

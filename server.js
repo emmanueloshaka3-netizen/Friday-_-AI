@@ -21,6 +21,9 @@ app.get("/health", (req, res) => {
 // Body: { messages: [{ role: "user" | "assistant", content: "text" }, ...] }
 app.post("/chat", async (req, res) => {
   try {
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({ error: "GROQ_API_KEY is missing on Render. Add it under Environment." });
+    }
     const { messages } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "messages array required" });
@@ -43,13 +46,14 @@ app.post("/chat", async (req, res) => {
     const data = await r.json();
     if (!r.ok) {
       console.error("Groq error:", JSON.stringify(data));
-      return res.status(500).json({ error: "Friday hit a snag. Check server logs." });
+      const why = (data && data.error && data.error.message) || ("status " + r.status);
+      return res.status(500).json({ error: "Groq says: " + why });
     }
 
     res.json({ reply: data.choices[0].message.content });
   } catch (err) {
     console.error("Chat error:", err.message);
-    res.status(500).json({ error: "Friday hit a snag. Check server logs." });
+    res.status(500).json({ error: "Server error: " + err.message });
   }
 });
 

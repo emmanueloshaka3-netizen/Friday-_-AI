@@ -238,7 +238,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
       speak(data.reply);
     } catch (e) {
       pending.className = "msg bot error";
-      pending.textContent = "Couldn't reach Friday. Check the server logs on Render, then try again.";
+      pending.textContent = "Friday couldn't answer. " + (e && e.message ? e.message : "");
       history.pop();
       setState("idle");
     } finally {

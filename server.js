@@ -12,7 +12,7 @@ PUBLIC_FILES.forEach((f) => {
 });
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = process.env.MODEL || "llama-3.3-70b-versatile";
+const MODEL = process.env.MODEL || "openai/gpt-oss-120b";
 
 app.get("/health", (req, res) => {
   res.json({ status: "online", name: "Friday" });
@@ -34,7 +34,8 @@ app.post("/chat", async (req, res) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 1024,
+        max_tokens: 2048,
+        ...(MODEL.includes("gpt-oss") ? { reasoning_effort: "low" } : {}),
         messages: [{ role: "system", content: FRIDAY_PROMPT }, ...messages],
       }),
     });

@@ -4,7 +4,12 @@ const { FRIDAY_PROMPT } = require("./friday");
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+// Serve only these files from the main folder (keeps server.js private)
+const PUBLIC_FILES = ["manifest.json", "sw.js", "icon-192.png", "icon-512.png"];
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+PUBLIC_FILES.forEach((f) => {
+  app.get("/" + f, (req, res) => res.sendFile(path.join(__dirname, f)));
+});
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = process.env.MODEL || "llama-3.3-70b-versatile";

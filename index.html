@@ -233,7 +233,7 @@
       <h1>Friday</h1>
     </div>
     <div class="tools">
-      <button class="chip" id="voiceToggle" aria-pressed="true">Voice on</button>
+      <button class="chip" id="voiceToggle" aria-pressed="true">Studio voice</button>
       <button class="chip" id="memBtn">Memory</button>
     </div>
   </header>
@@ -312,7 +312,10 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
   const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
 
-  let voiceOn = load(KEYS.voice, true);
+  let voiceMode = load(KEYS.voice, "studio"); // "studio" = Groq voice, "phone" = this phone's voice, "off"
+  if (voiceMode === true) voiceMode = "studio";
+  if (voiceMode === false || !["studio", "phone", "off"].includes(voiceMode)) voiceMode = voiceMode === false ? "off" : "studio";
+  let studioFailedAt = 0; // if Groq's voice fails, use the phone voice for a few minutes
   let busy = false;
 
   /* ================= status + messages ================= */
@@ -551,9 +554,17 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
   }
   const fetchAudio = (text) =>
     fetch("/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) })
-      .then((r) => { if (!r.ok) throw new Error("voice"); return r.blob(); });
+      .then(async (r) => {
+        if (!r.ok) {
+          let raw = "";
+          try { raw = (await r.json()).error || ""; } catch (e) {}
+          const m = raw.match(/"message"\s*:\s*"([^"]+)"/);
+          throw new Error((m ? m[1] : raw || "server error " + r.status).slice(0, 110));
+        }
+        return r.blob();
+      });
 
-  function playBlob(blob, token) {
+  function playBlob(blob, token, onStart) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(blob);
       const done = () => URL.revokeObjectURL(url);
@@ -562,31 +573,43 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
       player.src = url;
       player.defaultPlaybackRate = VOICE_RATE;
       player.playbackRate = VOICE_RATE;
-      player.play().then(() => { if (token === speakToken) setState("speaking"); }).catch((e) => { done(); reject(e); });
+      player.play().then(() => { if (onStart) onStart(); if (token === speakToken) setState("speaking"); }).catch((e) => { done(); reject(e); });
     });
   }
 
-  // fallback if the server voice is unavailable: deepest male-sounding voice the phone has
-  function browserSpeak(text) {
-    if (!("speechSynthesis" in window)) { setState("idle"); return; }
-    const voices = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
-    const male = voices.find((v) => /male|david|mark|daniel|james|guy|ryan|alex|fred|x-iom|x-tpd|x-rjs/i.test(v.name) && !/female/i.test(v.name));
-    const u = new SpeechSynthesisUtterance(text);
-    if (male || voices[0]) u.voice = male || voices[0];
-    u.pitch = 0.6;
-    u.rate = 0.95;
-    u.onstart = () => setState("speaking");
-    u.onend = u.onerror = () => setState("idle");
-    speechSynthesis.speak(u);
+  // the phone's own voice: picks the deepest male-sounding English voice it can find
+  function browserSpeak(text, note) {
+    if (!("speechSynthesis" in window)) { setState("idle", "This browser has no voice to speak with."); return; }
+    const go = () => {
+      const voices = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
+      const male = voices.find((v) => /male|david|mark|daniel|james|guy|ryan|alex|fred|x-iom|x-tpd|x-rjs/i.test(v.name) && !/female/i.test(v.name));
+      const u = new SpeechSynthesisUtterance(text);
+      if (male || voices[0]) u.voice = male || voices[0];
+      u.pitch = 0.6;
+      u.rate = 0.95;
+      u.onstart = () => setState("speaking", note ? note + " Tap to stop." : undefined);
+      u.onend = () => setState("idle");
+      u.onerror = (e) => setState("idle", "Phone voice problem: " + ((e && e.error) || "unknown") + ". Check your media volume.");
+      try { speechSynthesis.resume(); } catch (e) {}
+      speechSynthesis.speak(u);
+    };
+    if (speechSynthesis.getVoices().length) return go();
+    let done = false;
+    const fin = () => { if (!done) { done = true; go(); } };
+    speechSynthesis.onvoiceschanged = fin;
+    setTimeout(fin, 800);
   }
 
   async function speak(raw) {
-    if (!voiceOn) { setState("idle"); return; }
+    if (voiceMode === "off") { setState("idle"); return; }
     stopSpeaking(true);
     const token = ++speakToken;
     const text = prepareSpeech(raw);
     const chunks = chunkSpeech(text);
     if (!chunks.length) { setState("idle"); return; }
+    if (voiceMode === "phone") { browserSpeak(text); return; }
+    if (Date.now() - studioFailedAt < 300000) { browserSpeak(text, "Studio voice is unavailable, using the phone voice."); return; }
+    let started = false; // has any studio audio actually begun playing?
     let next = fetchAudio(chunks[0]);
     next.catch(() => {});
     try {
@@ -594,13 +617,16 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
         const blob = await next;
         if (token !== speakToken) return;
         if (i + 1 < chunks.length) { next = fetchAudio(chunks[i + 1]); next.catch(() => {}); }
-        await playBlob(blob, token);
+        await playBlob(blob, token, () => { started = true; });
         if (token !== speakToken) return;
       }
       setState("idle");
     } catch (e) {
       if (token !== speakToken) return;
-      if (player.currentTime === 0) browserSpeak(text); else setState("idle");
+      if (!started) {
+        studioFailedAt = Date.now();
+        browserSpeak(text, "Studio voice failed (" + (e && e.message ? e.message : "unknown") + "). Using the phone voice.");
+      } else setState("idle");
     }
   }
   function stopSpeaking(silent) {
@@ -830,15 +856,18 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
   /* ================= controls ================= */
   sendBtn.addEventListener("click", () => send(input.value));
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(input.value); });
+  const VOICE_LABEL = { studio: "Studio voice", phone: "Phone voice", off: "Voice off" };
   function paintVoice() {
-    voiceToggle.setAttribute("aria-pressed", String(voiceOn));
-    voiceToggle.textContent = voiceOn ? "Voice on" : "Voice off";
+    voiceToggle.setAttribute("aria-pressed", String(voiceMode !== "off"));
+    voiceToggle.textContent = VOICE_LABEL[voiceMode];
   }
   voiceToggle.addEventListener("click", () => {
-    voiceOn = !voiceOn;
-    store(KEYS.voice, voiceOn);
+    voiceMode = voiceMode === "studio" ? "phone" : voiceMode === "phone" ? "off" : "studio";
+    if (voiceMode === "studio") studioFailedAt = 0;
+    store(KEYS.voice, voiceMode);
     paintVoice();
-    if (!voiceOn) stopSpeaking();
+    stopSpeaking(true);
+    setState("idle", voiceMode === "off" ? "Voice is off." : voiceMode === "phone" ? "Using this phone's voice." : "Using the studio voice.");
   });
   paintVoice();
 

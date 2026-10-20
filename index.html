@@ -125,6 +125,25 @@
   }
   #send:disabled { opacity: .5; }
 
+  .tools { flex-wrap: wrap; justify-content: flex-end; }
+  #memPanel {
+    position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end;
+    background: rgba(3,5,12,.72);
+  }
+  #memPanel[hidden] { display: none; }
+  .sheet {
+    width: 100%; max-height: 75dvh; overflow-y: auto;
+    background: var(--deep); border-top: 1px solid var(--line);
+    border-radius: 20px 20px 0 0; padding: 18px 16px; padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  .sheet h2 { margin: 0 0 4px; font-family: "Syne", sans-serif; font-size: 18px; }
+  .sheet p.hint { margin: 0 0 14px; font-size: 14px; color: var(--muted); }
+  .fact { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .fact span { flex: 1; }
+  .fact button { font: inherit; font-size: 13px; color: #ffb4b4; background: none; border: 1px solid #4a2a2f; border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+  .sheet-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .sheet-actions .chip { flex: 1; padding: 10px; }
+
   @media (prefers-reduced-motion: reduce) {
     .core, .halo, .ring { animation: none !important; }
   }
@@ -134,7 +153,8 @@
   <header>
     <h1>Friday</h1>
     <div class="tools">
-      <button class="chip" id="voiceToggle" aria-pressed="true">Voice replies on</button>
+      <button class="chip" id="voiceToggle" aria-pressed="true">Voice on</button>
+      <button class="chip" id="memBtn">Memory</button>
       <button class="chip" id="clear">New chat</button>
     </div>
   </header>
@@ -147,6 +167,18 @@
   </section>
 
   <section id="log" aria-live="polite"></section>
+
+  <div id="memPanel" hidden>
+    <div class="sheet" role="dialog" aria-label="What Friday remembers">
+      <h2>What Friday remembers</h2>
+      <p class="hint">Saved on this phone. Tell Friday "forget that" or remove items here.</p>
+      <div id="memList"></div>
+      <div class="sheet-actions">
+        <button class="chip" id="memClear">Clear all</button>
+        <button class="chip" id="memClose">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div class="bar">
     <input id="input" placeholder="Ask Friday anything" autocomplete="off" enterkeyhint="send">
@@ -163,6 +195,55 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
   const sendBtn = document.getElementById("send");
   const voiceToggle = document.getElementById("voiceToggle");
   const clearBtn = document.getElementById("clear");
+
+  const MEM = "friday.memory";
+  const memBtn = document.getElementById("memBtn");
+  const memPanel = document.getElementById("memPanel");
+  const memList = document.getElementById("memList");
+  let memory = [];
+  try { memory = JSON.parse(localStorage.getItem(MEM)) || []; } catch (e) { memory = []; }
+
+  function saveMem() { try { localStorage.setItem(MEM, JSON.stringify(memory)); } catch (e) {} }
+  function renderMem() {
+    memBtn.textContent = memory.length ? "Memory (" + memory.length + ")" : "Memory";
+    memList.innerHTML = "";
+    if (!memory.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "Nothing yet. Tell Friday about yourself and she'll start remembering.";
+      memList.appendChild(p);
+      return;
+    }
+    memory.forEach((f, i) => {
+      const row = document.createElement("div");
+      row.className = "fact";
+      const t = document.createElement("span");
+      t.textContent = f;
+      const b = document.createElement("button");
+      b.textContent = "Remove";
+      b.onclick = () => { memory.splice(i, 1); saveMem(); renderMem(); };
+      row.append(t, b);
+      memList.appendChild(row);
+    });
+  }
+  async function remember(text) {
+    try {
+      const r = await fetch("/remember", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, memory })
+      });
+      const d = await r.json();
+      if (Array.isArray(d.memory)) { memory = d.memory; saveMem(); renderMem(); }
+    } catch (e) {}
+  }
+  memBtn.onclick = () => { renderMem(); memPanel.hidden = false; };
+  document.getElementById("memClose").onclick = () => { memPanel.hidden = true; };
+  memPanel.addEventListener("click", (e) => { if (e.target === memPanel) memPanel.hidden = true; });
+  document.getElementById("memClear").onclick = () => {
+    if (confirm("Erase everything Friday remembers about you?")) { memory = []; saveMem(); renderMem(); }
+  };
+  renderMem();
 
   const STORE = "friday.history";
   const IDLE_TEXT = "Tap the orb and talk, or type below";
@@ -227,7 +308,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
       const r = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history.slice(-20) })
+        body: JSON.stringify({ messages: history.slice(-20), memory })
       });
       const data = await r.json();
       if (!r.ok || !data.reply) throw new Error(data.error || "No response");
@@ -236,6 +317,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
       history.push({ role: "assistant", content: data.reply });
       save();
       speak(data.reply);
+      remember(text);
     } catch (e) {
       pending.className = "msg bot error";
       pending.textContent = "Friday couldn't answer. " + (e && e.message ? e.message : "");
@@ -289,7 +371,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
   voiceToggle.addEventListener("click", () => {
     voiceOn = !voiceOn;
     voiceToggle.setAttribute("aria-pressed", String(voiceOn));
-    voiceToggle.textContent = voiceOn ? "Voice replies on" : "Voice replies off";
+    voiceToggle.textContent = voiceOn ? "Voice on" : "Voice off";
     if (!voiceOn && "speechSynthesis" in window) { speechSynthesis.cancel(); setState("idle"); }
   });
   clearBtn.addEventListener("click", () => {

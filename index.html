@@ -187,6 +187,40 @@
   .chat-del { font: inherit; font-size: 13px; color: #ffb4b4; background: none; border: 0; padding: 6px; cursor: pointer; }
   .empty-note { color: var(--muted); font-size: 14px; padding: 8px 4px; }
   @media (prefers-reduced-motion: reduce) { .scrim, .panel { transition: none; } }
+
+  /* ---- attachments ---- */
+  .bar { position: relative; align-items: center; }
+  #plus {
+    width: 44px; height: 44px; flex: none; display: grid; place-items: center; cursor: pointer;
+    background: var(--deep); border: 1px solid var(--line); border-radius: 14px; color: var(--glow); padding: 0;
+  }
+  #plus:focus-visible, .menu button:focus-visible, .x:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; }
+  .menu {
+    position: absolute; left: 12px; bottom: calc(100% + 6px); z-index: 5;
+    background: var(--deep); border: 1px solid var(--line); border-radius: 16px; padding: 6px; min-width: 220px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.5);
+  }
+  .menu[hidden] { display: none; }
+  .menu button {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    font: inherit; color: var(--text); background: none; border: 0; border-radius: 10px; padding: 12px; cursor: pointer;
+  }
+  .menu button:active { background: #151d38; }
+  #tray { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px 0; }
+  #tray:empty { display: none; }
+  .att {
+    position: relative; display: flex; align-items: center; gap: 8px; max-width: 70%;
+    background: var(--deep); border: 1px solid var(--line); border-radius: 12px; padding: 6px 30px 6px 8px; font-size: 13px;
+  }
+  .att img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; display: block; }
+  .att .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .x {
+    position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; display: grid; place-items: center;
+    background: #1c2547; color: var(--text); border: 0; border-radius: 50%; font-size: 12px; cursor: pointer; padding: 0;
+  }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .thumbs img { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; }
+  .file-chip { display: inline-block; font-size: 13px; color: var(--glow); border: 1px solid #5a3a2a; border-radius: 999px; padding: 2px 10px; margin-bottom: 6px; }
 </style>
 </head>
 <body>
@@ -212,10 +246,31 @@
 
   <section id="log" aria-live="polite"></section>
 
+  <div id="tray" aria-label="Attachments"></div>
   <div class="bar">
+    <button id="plus" aria-label="Attach" aria-expanded="false">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <div class="menu" id="menu" hidden>
+      <button id="pickCamera">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        Camera
+      </button>
+      <button id="pickPhoto">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="1.6"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>
+        Photo or screenshot
+      </button>
+      <button id="pickDoc">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>
+        Document
+      </button>
+    </div>
     <input id="input" placeholder="Ask Friday anything" autocomplete="off" enterkeyhint="send">
     <button id="send">Send</button>
   </div>
+  <input type="file" id="fileCamera" accept="image/*" capture="environment" hidden>
+  <input type="file" id="filePhoto" accept="image/*" multiple hidden>
+  <input type="file" id="fileDoc" accept=".pdf,.docx,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yml,.yaml,.log,.java,.c,.cpp,.php,.sql,text/*" hidden>
 
   <div id="drawer">
     <div class="scrim" id="scrim"></div>
@@ -254,7 +309,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
   const KEYS = { chats: "friday.chats", old: "friday.history", mem: "friday.memory", voice: "friday.voice" };
 
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
-  const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
 
   let voiceOn = load(KEYS.voice, true);
   let busy = false;
@@ -265,10 +320,30 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
     const labels = { idle: IDLE_TEXT, listening: "Listening", thinking: "Thinking", speaking: "Speaking. Tap to stop" };
     statusEl.textContent = text || labels[s];
   }
-  function addMsg(text, cls) {
+  function addMsg(text, cls, m) {
     const d = document.createElement("div");
     d.className = "msg " + cls;
-    d.textContent = text;
+    if (m && ((m.images && m.images.length) || m.imgCount || m.doc)) {
+      if (m.images && m.images.length) {
+        const wrap = document.createElement("div");
+        wrap.className = "thumbs";
+        m.images.forEach((u) => { const im = document.createElement("img"); im.src = u; im.alt = "Attached photo"; wrap.appendChild(im); });
+        d.appendChild(wrap);
+      } else if (m.imgCount) {
+        const c = document.createElement("div");
+        c.className = "file-chip";
+        c.textContent = m.imgCount > 1 ? m.imgCount + " photos" : "Photo";
+        d.appendChild(c);
+      }
+      if (m.doc) {
+        const c = document.createElement("div");
+        c.className = "file-chip";
+        c.textContent = m.doc.name;
+        d.appendChild(c);
+        d.appendChild(document.createElement("br"));
+      }
+    }
+    d.appendChild(document.createTextNode(text));
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
     return d;
@@ -293,11 +368,24 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
     const i = chats.findIndex((c) => c.id === current.id);
     if (i >= 0) chats[i] = current; else chats.unshift(current);
     chats = chats.sort((a, b) => b.updated - a.updated).slice(0, 50);
-    store(KEYS.chats, chats.map((c) => ({ ...c, messages: c.messages.slice(-60) })));
+    const slim = (keepDocs) => chats.map((c) => ({
+      ...c,
+      messages: c.messages.slice(-60).map((m) => {
+        const { images, ...rest } = m; // photos stay in memory only
+        if (rest.doc && !(keepDocs || c.id === current.id)) rest.doc = { name: rest.doc.name, text: "" };
+        return rest;
+      })
+    }));
+    if (!store(KEYS.chats, slim(true))) {
+      if (!store(KEYS.chats, slim(false))) {
+        chats = chats.slice(0, 15);
+        store(KEYS.chats, slim(false));
+      }
+    }
   }
   function renderChat() {
     log.innerHTML = "";
-    current.messages.forEach((m) => addMsg(m.content, m.role === "user" ? "user" : "bot"));
+    current.messages.forEach((m) => addMsg(m.content, m.role === "user" ? "user" : "bot", m));
   }
   function startNew() {
     stopSpeaking();
@@ -521,15 +609,160 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
     if (!silent) setState("idle");
   }
 
+  /* ================= attachments ================= */
+  const MAX_IMAGES = 3, MAX_DOC_CHARS = 12000;
+  let pending = { images: [], doc: null };
+  const tray = $("tray"), menu = $("menu"), plus = $("plus");
+
+  function renderTray() {
+    tray.innerHTML = "";
+    const mk = (label, thumb, onRemove) => {
+      const a = document.createElement("div");
+      a.className = "att";
+      if (thumb) { const im = document.createElement("img"); im.src = thumb; im.alt = ""; a.appendChild(im); }
+      const n = document.createElement("span");
+      n.className = "nm";
+      n.textContent = label;
+      const x = document.createElement("button");
+      x.className = "x";
+      x.setAttribute("aria-label", "Remove " + label);
+      x.textContent = "\u2715";
+      x.onclick = onRemove;
+      a.append(n, x);
+      tray.appendChild(a);
+    };
+    pending.images.forEach((im, i) => mk(im.name, im.dataUrl, () => { pending.images.splice(i, 1); renderTray(); }));
+    if (pending.doc) mk(pending.doc.name, null, () => { pending.doc = null; renderTray(); });
+  }
+  function toggleMenu(show) {
+    menu.hidden = !show;
+    plus.setAttribute("aria-expanded", String(show));
+  }
+  plus.onclick = (e) => { e.stopPropagation(); toggleMenu(menu.hidden); };
+  document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target)) toggleMenu(false); });
+  $("pickCamera").onclick = () => { toggleMenu(false); $("fileCamera").click(); };
+  $("pickPhoto").onclick = () => { toggleMenu(false); $("filePhoto").click(); };
+  $("pickDoc").onclick = () => { toggleMenu(false); $("fileDoc").click(); };
+
+  function shrinkImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const max = 1280;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Couldn't open that image.")); };
+      img.src = url;
+    });
+  }
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("Couldn't load the document reader. Check your connection."));
+      document.head.appendChild(s);
+    });
+  }
+  async function readPdf(file) {
+    if (!window.pdfjsLib) {
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+    const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    let text = "";
+    for (let p = 1; p <= pdf.numPages && text.length < MAX_DOC_CHARS; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      text += content.items.map((i) => i.str).join(" ") + "\n\n";
+    }
+    return text;
+  }
+  async function readDocx(file) {
+    if (!window.mammoth) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js");
+    const r = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    return r.value;
+  }
+  async function readDoc(file) {
+    const name = file.name || "document";
+    const lower = name.toLowerCase();
+    let text;
+    if (lower.endsWith(".pdf") || file.type === "application/pdf") text = await readPdf(file);
+    else if (lower.endsWith(".docx")) text = await readDocx(file);
+    else if (/\.(xlsx|xls|pptx|ppt|doc|zip|rar|apk|exe)$/.test(lower)) throw new Error("That file type isn't supported yet. Use PDF, Word (.docx), or a text file.");
+    else text = await file.text();
+    text = (text || "").replace(/\u0000/g, "").trim();
+    if (!text) throw new Error("I couldn't find any text in that file. If it's a scan, send the pages as photos instead.");
+    let truncated = false;
+    if (text.length > MAX_DOC_CHARS) { text = text.slice(0, MAX_DOC_CHARS); truncated = true; }
+    return { name, text: truncated ? text + "\n[...document continues, only the first part was sent]" : text, truncated };
+  }
+
+  async function addImages(fileList) {
+    for (const f of Array.from(fileList)) {
+      if (pending.images.length >= MAX_IMAGES) { setState("idle", "Up to " + MAX_IMAGES + " photos at a time."); break; }
+      try {
+        setState("idle", "Preparing photo...");
+        pending.images.push({ name: f.name || "Photo", dataUrl: await shrinkImage(f) });
+        setState("idle");
+      } catch (e) { setState("idle", e.message); }
+    }
+    renderTray();
+  }
+  async function addDoc(f) {
+    if (!f) return;
+    if (f.size > 15 * 1024 * 1024) { setState("idle", "That file is over 15 MB. Try a smaller one."); return; }
+    try {
+      setState("idle", "Reading " + f.name + "...");
+      pending.doc = await readDoc(f);
+      setState("idle", pending.doc.truncated ? "Long document. Friday will read the first part." : IDLE_TEXT);
+    } catch (e) { setState("idle", e.message); }
+    renderTray();
+  }
+  $("fileCamera").onchange = (e) => { addImages(e.target.files); e.target.value = ""; };
+  $("filePhoto").onchange = (e) => { addImages(e.target.files); e.target.value = ""; };
+  $("fileDoc").onchange = (e) => { addDoc(e.target.files[0]); e.target.value = ""; };
+
+  // what the server needs: photos only on the newest photo message, documents on the last two
+  function apiMessages() {
+    const msgs = current.messages.slice(-20);
+    let lastImg = -1;
+    const docIdx = [];
+    msgs.forEach((m, i) => { if (m.images && m.images.length) lastImg = i; if (m.doc && m.doc.text) docIdx.push(i); });
+    const keep = new Set(docIdx.slice(-2));
+    return msgs.map((m, i) => {
+      const o = { role: m.role, content: m.content };
+      if (i === lastImg) o.images = m.images;
+      else if (m.imgCount) o.content += " [The user attached " + m.imgCount + " photo(s) here]";
+      if (m.doc) {
+        if (keep.has(i)) o.doc = { name: m.doc.name, text: m.doc.text };
+        else o.content += " [The user attached the document " + m.doc.name + " here]";
+      }
+      return o;
+    });
+  }
+
   /* ================= chat ================= */
   async function send(text) {
     text = (text || "").trim();
-    if (!text || busy) return;
+    const hasAtt = pending.images.length > 0 || !!pending.doc;
+    if ((!text && !hasAtt) || busy) return;
+    if (!text) text = pending.images.length ? "What's in this?" : "Summarize this document for me.";
     busy = true; sendBtn.disabled = true;
     input.value = "";
     stopSpeaking(true);
-    addMsg(text, "user");
-    current.messages.push({ role: "user", content: text });
+    const msg = { role: "user", content: text };
+    if (pending.images.length) { msg.images = pending.images.map((i) => i.dataUrl); msg.imgCount = msg.images.length; }
+    if (pending.doc) msg.doc = { name: pending.doc.name, text: pending.doc.text };
+    pending = { images: [], doc: null };
+    renderTray();
+    addMsg(text, "user", msg);
+    current.messages.push(msg);
     if (!current.title) current.title = text.slice(0, 40);
     current.updated = Date.now();
     const pending = addMsg("...", "bot pending");
@@ -537,7 +770,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
     try {
       const r = await fetch("/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: current.messages.slice(-20), memory, recent: recentContext() })
+        body: JSON.stringify({ messages: apiMessages(), memory, recent: recentContext() })
       });
       const data = await r.json();
       if (!r.ok || !data.reply) throw new Error(data.error || "No response");

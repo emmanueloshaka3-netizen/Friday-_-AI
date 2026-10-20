@@ -124,6 +124,7 @@
     border: 0; border-radius: 14px; padding: 0 18px; cursor: pointer;
   }
   #send:disabled { opacity: .5; }
+  #send { align-self: stretch; }
 
   .tools { flex-wrap: wrap; justify-content: flex-end; }
   #memPanel {
@@ -765,7 +766,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
     current.messages.push(msg);
     if (!current.title) current.title = text.slice(0, 40);
     current.updated = Date.now();
-    const pending = addMsg("...", "bot pending");
+    const bubble = addMsg("...", "bot pending");
     setState("thinking");
     try {
       const r = await fetch("/chat", {
@@ -774,16 +775,16 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
       });
       const data = await r.json();
       if (!r.ok || !data.reply) throw new Error(data.error || "No response");
-      pending.className = "msg bot";
-      pending.textContent = data.reply;
+      bubble.className = "msg bot";
+      bubble.textContent = data.reply;
       current.messages.push({ role: "assistant", content: data.reply });
       current.updated = Date.now();
       persist();
       speak(data.reply);
       remember(text);
     } catch (e) {
-      pending.className = "msg bot error";
-      pending.textContent = "Friday couldn't answer. " + (e && e.message ? e.message : "");
+      bubble.className = "msg bot error";
+      bubble.textContent = "Friday couldn't answer. " + (e && e.message ? e.message : "");
       current.messages.pop();
       setState("idle");
     } finally {

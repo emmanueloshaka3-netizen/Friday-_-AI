@@ -3,7 +3,7 @@ const path = require("path");
 const { FRIDAY_PROMPT } = require("./friday");
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "12mb" })); // room for photos
 
 // Serve only these files from the main folder (keeps server.js private)
 const PUBLIC_FILES = ["manifest.json", "sw.js", "icon-192.png", "icon-512.png"];
@@ -16,6 +16,8 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = process.env.MODEL || "openai/gpt-oss-120b";
 // Groq's built-in web search system. Used only when a question needs live info.
 const SEARCH_MODEL = process.env.SEARCH_MODEL || "groq/compound";
+// Used only when the user sends a photo or screenshot.
+const VISION_MODEL = process.env.VISION_MODEL || "qwen/qwen3.8-27b";
 
 // Words that suggest the question needs fresh, real-world information
 const LIVE = /\b(today|tonight|now|current|currently|latest|recent|recently|news|weather|rate|price|prices|score|scores|stock|stocks|trending|search|google|look up|who won|exchange|dollar|naira|bitcoin|crypto|update|updates|this week|this month|this year|2026)\b/i;
@@ -24,8 +26,8 @@ app.get("/health", (req, res) => {
   res.json({ status: "online", name: "Friday" });
 });
 
-async function callGroq(model, messages) {
-  const body = { model, max_tokens: 2048, messages };
+async function callGroq(model, messages, maxTokens = 2048) {
+  const body = { model, max_tokens: maxTokens, messages };
   if (model.includes("gpt-oss")) body.reasoning_effort = "low";
   const r = await fetch(GROQ_URL, {
     method: "POST",
@@ -40,7 +42,34 @@ async function callGroq(model, messages) {
     const why = (data && data.error && data.error.message) || "status " + r.status;
     throw new Error(why);
   }
-  return data.choices[0].message.content;
+  const text = (data.choices[0].message.content || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  if (!text) throw new Error("the model returned an empty answer");
+  return text;
+}
+
+// Turn the app's messages into Groq messages: attach document text, and photos as image parts.
+function buildMessages(messages) {
+  let imageCount = 0;
+  const out = messages.slice(-20).map((m) => {
+    const role = m && m.role === "assistant" ? "assistant" : "user";
+    let text = String((m && m.content) || "").slice(0, 6000);
+    if (role === "user" && m.doc && typeof m.doc.text === "string") {
+      const name = String(m.doc.name || "document").slice(0, 80);
+      text += `\n\n[Attached document: ${name}]\n${m.doc.text.slice(0, 12000)}`;
+    }
+    const imgs = role === "user" && Array.isArray(m.images)
+      ? m.images.filter((u) => typeof u === "string" && u.startsWith("data:image/") && u.length < 6000000).slice(0, 3)
+      : [];
+    if (imgs.length) {
+      imageCount += imgs.length;
+      return {
+        role,
+        content: [{ type: "text", text }, ...imgs.map((u) => ({ type: "image_url", image_url: { url: u } }))],
+      };
+    }
+    return { role, content: text };
+  });
+  return { out, imageCount };
 }
 
 function cleanMemory(m) {
@@ -163,9 +192,16 @@ app.post("/chat", async (req, res) => {
       ? "\n\nEarlier conversations with the user, most recent first. Use them for continuity and mention them only when relevant:\n" +
         recent.map((c) => `- "${c.title}": user said "${c.user}"` + (c.reply ? `; you replied "${c.reply}"` : "")).join("\n")
       : "";
-    const full = [{ role: "system", content: FRIDAY_PROMPT + memoryBlock + recentBlock }, ...messages];
-    const last = messages[messages.length - 1].content || "";
-    const wantsSearch = LIVE.test(last);
+    const built = buildMessages(messages);
+    const full = [{ role: "system", content: FRIDAY_PROMPT + memoryBlock + recentBlock }, ...built.out];
+    const lastMsg = messages[messages.length - 1] || {};
+    const last = String(lastMsg.content || "");
+    const wantsSearch = LIVE.test(last) && !lastMsg.doc && built.imageCount === 0;
+
+    if (built.imageCount > 0) {
+      const reply = await callGroq(VISION_MODEL, full, 4096);
+      return res.json({ reply, searched: false });
+    }
 
     let reply;
     let searched = false;

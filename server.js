@@ -6,7 +6,9 @@ const app = express();
 app.use(express.json({ limit: "12mb" })); // room for photos
 
 // Serve only these files from the main folder (keeps server.js private)
-const PUBLIC_FILES = ["manifest.json", "sw.js", "icon-192.png", "icon-512.png"];
+const PUBLIC_FILES = ["manifest.json", "sw.js"];
+// any app icon in the main folder, e.g. icon-192.png or icon-192-2.png
+app.get(/^\/(icon[\w-]*\.png)$/, (req, res) => res.sendFile(path.join(__dirname, req.params[0])));
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
 PUBLIC_FILES.forEach((f) => {
   app.get("/" + f, (req, res) => res.sendFile(path.join(__dirname, f)));
@@ -21,6 +23,9 @@ const VISION_MODEL = process.env.VISION_MODEL || "qwen/qwen3.8-27b";
 
 // Words that suggest the question needs fresh, real-world information
 const LIVE = /\b(today|tonight|now|current|currently|latest|recent|recently|news|weather|rate|price|prices|score|scores|stock|stocks|trending|search|google|look up|who won|exchange|dollar|naira|bitcoin|crypto|update|updates|this week|this month|this year|2026)\b/i;
+
+// Coding or building requests: give longer answers and never route them to web search
+const CODE = /\b(code|script|function|html|css|javascript|python|node|json|bug|error|fix|file|files|website|project|api|app|repo|github|render|build|deploy|server|endpoint|database|component|stage)\b/i;
 
 app.get("/health", (req, res) => {
   res.json({ status: "online", name: "Friday" });
@@ -196,7 +201,9 @@ app.post("/chat", async (req, res) => {
     const full = [{ role: "system", content: FRIDAY_PROMPT + memoryBlock + recentBlock }, ...built.out];
     const lastMsg = messages[messages.length - 1] || {};
     const last = String(lastMsg.content || "");
-    const wantsSearch = LIVE.test(last) && !lastMsg.doc && built.imageCount === 0;
+    const coding = CODE.test(last);
+    const wantsSearch = LIVE.test(last) && !coding && !lastMsg.doc && built.imageCount === 0;
+    const tokens = coding ? 4096 : 2048;
 
     if (built.imageCount > 0) {
       const reply = await callGroq(VISION_MODEL, full, 4096);
@@ -207,13 +214,13 @@ app.post("/chat", async (req, res) => {
     let searched = false;
     if (wantsSearch) {
       try {
-        reply = await callGroq(SEARCH_MODEL, full);
+        reply = await callGroq(SEARCH_MODEL, full, tokens);
         searched = true;
       } catch (e) {
         console.error("Search model failed, falling back:", e.message);
       }
     }
-    if (!reply) reply = await callGroq(MODEL, full);
+    if (!reply) reply = await callGroq(MODEL, full, tokens);
 
     res.json({ reply, searched });
   } catch (err) {

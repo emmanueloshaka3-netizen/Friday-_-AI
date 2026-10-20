@@ -43,6 +43,63 @@ async function callGroq(model, messages) {
   return data.choices[0].message.content;
 }
 
+function cleanMemory(m) {
+  if (!Array.isArray(m)) return [];
+  return m
+    .filter((x) => typeof x === "string" && x.trim())
+    .map((x) => x.trim().slice(0, 200))
+    .slice(0, 60);
+}
+
+// Body: { message: "latest user message", memory: ["fact", ...] }
+// Returns the updated memory list.
+app.post("/remember", async (req, res) => {
+  const memory = cleanMemory(req.body.memory);
+  try {
+    const message = String(req.body.message || "").slice(0, 1500);
+    if (!process.env.GROQ_API_KEY || message.trim().length < 8) {
+      return res.json({ memory });
+    }
+
+    const numbered = memory.length
+      ? memory.map((m, i) => `${i + 1}. ${m}`).join("\n")
+      : "(nothing yet)";
+    const prompt = [
+      {
+        role: "system",
+        content:
+          "You maintain a short memory list about a user. Read their latest message and decide what to change.\n" +
+          "Add only durable facts about the user: name, nickname, where they live, work, projects, skills, interests, goals, and preferences about how the assistant should talk to them.\n" +
+          "Never store passwords, API keys, card or bank numbers, ID numbers, or one-off requests and questions.\n" +
+          "Write each fact as a short third-person sentence, like \"Name is Emmanuel\" or \"Builds games from his phone\".\n" +
+          "If a new fact replaces an old one (moved city, changed project), put the old item's number in remove.\n" +
+          "If the user asks you to forget something, remove it.\n" +
+          'Reply with JSON only, exactly like {"add":["..."],"remove":[3]}. Use empty arrays when nothing changes.',
+      },
+      { role: "user", content: `Current memory:\n${numbered}\n\nLatest message from the user:\n${message}` },
+    ];
+
+    const raw = await callGroq(MODEL, prompt);
+    const match = raw.match(/\{[\s\S]*\}/);
+    const out = match ? JSON.parse(match[0]) : {};
+    const remove = new Set((Array.isArray(out.remove) ? out.remove : []).map((n) => Number(n) - 1));
+    let next = memory.filter((_, i) => !remove.has(i));
+    const have = new Set(next.map((m) => m.toLowerCase()));
+    (Array.isArray(out.add) ? out.add : []).forEach((f) => {
+      if (typeof f !== "string") return;
+      const t = f.trim().slice(0, 200);
+      if (t && !have.has(t.toLowerCase())) {
+        next.push(t);
+        have.add(t.toLowerCase());
+      }
+    });
+    res.json({ memory: next.slice(-60) });
+  } catch (err) {
+    console.error("Remember error:", err.message);
+    res.json({ memory });
+  }
+});
+
 // Body: { messages: [{ role: "user" | "assistant", content: "text" }, ...] }
 app.post("/chat", async (req, res) => {
   try {
@@ -54,7 +111,12 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "messages array required" });
     }
 
-    const full = [{ role: "system", content: FRIDAY_PROMPT }, ...messages];
+    const memory = cleanMemory(req.body.memory);
+    const memoryBlock = memory.length
+      ? "\n\nThings you know about the user (use them naturally, never list them back unless asked):\n" +
+        memory.map((m) => "- " + m).join("\n")
+      : "";
+    const full = [{ role: "system", content: FRIDAY_PROMPT + memoryBlock }, ...messages];
     const last = messages[messages.length - 1].content || "";
     const wantsSearch = LIVE.test(last);
 

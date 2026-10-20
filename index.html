@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b16">
 <link rel="manifest" href="/manifest.json">
-<link rel="icon" href="/icon-192.png">
-<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" href="/icon-192-2.png">
+<link rel="apple-touch-icon" href="/icon-192-2.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Friday</title>
@@ -189,6 +189,27 @@
   .empty-note { color: var(--muted); font-size: 14px; padding: 8px 4px; }
   @media (prefers-reduced-motion: reduce) { .scrim, .panel { transition: none; } }
 
+  /* ---- code blocks and files in replies ---- */
+  .msg.has-code { max-width: 100%; width: 100%; }
+  .rt { margin: 0; }
+  .rt + .code, .code + .rt, .code + .code, .code + .zipbtn { margin-top: 8px; }
+  .code { background: #080c1b; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .code-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 6px 8px 6px 12px; background: #0c1226; border-bottom: 1px solid var(--line);
+  }
+  .fname { font-size: 13px; color: var(--glow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code-actions { display: flex; gap: 6px; flex: none; }
+  .code-actions button, .zipbtn {
+    font: inherit; font-size: 12px; color: var(--text); background: #151d38; border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 10px; cursor: pointer;
+  }
+  .zipbtn { display: block; color: #1a0d05; background: var(--ember); border: 0; font-weight: 600; padding: 9px 14px; border-radius: 10px; }
+  .code-actions button:focus-visible, .zipbtn:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; }
+  .code pre { margin: 0; padding: 10px 12px; overflow-x: auto; white-space: pre; tab-size: 2; }
+  .code code, code.inline { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.55; }
+  code.inline { background: #151d38; border-radius: 5px; padding: 1px 5px; color: #ffd9a0; }
+
   /* ---- attachments ---- */
   .bar { position: relative; align-items: center; }
   #plus {
@@ -312,6 +333,119 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
   const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
 
+  /* ================= rich replies: code blocks and downloadable files ================= */
+  const EXT = { javascript: "js", js: "js", node: "js", typescript: "ts", ts: "ts", python: "py", py: "py", html: "html", css: "css",
+    json: "json", bash: "sh", sh: "sh", shell: "sh", java: "java", c: "c", cpp: "cpp", php: "php", sql: "sql", yaml: "yml", yml: "yml",
+    markdown: "md", md: "md", text: "txt", txt: "txt", csv: "csv", xml: "xml", jsx: "jsx", tsx: "tsx" };
+
+  function parseReply(text) {
+    const parts = [];
+    const re = /```([^\n`]*)\n([\s\S]*?)(?:```|$)/g;
+    let last = 0, m, unnamed = 0;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) parts.push({ type: "text", text: text.slice(last, m.index) });
+      const info = m[1].trim().split(/\s+/).filter(Boolean);
+      const file = info.find((t) => /^[\w\-\/]+(\.[\w\-]+)*\.[A-Za-z0-9]+$/.test(t));
+      const lang = (info.find((t) => t !== file) || "").toLowerCase();
+      let name = file;
+      if (!name) { unnamed++; name = "snippet" + (unnamed > 1 ? unnamed : "") + "." + (EXT[lang] || "txt"); }
+      parts.push({ type: "code", name, named: !!file, code: m[2].replace(/\n$/, "") });
+      last = re.lastIndex;
+    }
+    if (last < text.length) parts.push({ type: "text", text: text.slice(last) });
+    return parts;
+  }
+
+  function saveBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name.split("/").pop();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
+  async function copyText(t, btn) {
+    try { await navigator.clipboard.writeText(t); }
+    catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch (e2) {}
+      ta.remove();
+    }
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+  }
+  function inlineText(container, text) {
+    text.split(/(`[^`\n]+`)/g).forEach((piece) => {
+      if (!piece) return;
+      if (piece.length > 2 && piece[0] === "`" && piece[piece.length - 1] === "`") {
+        const c = document.createElement("code");
+        c.className = "inline";
+        c.textContent = piece.slice(1, -1);
+        container.appendChild(c);
+      } else container.appendChild(document.createTextNode(piece));
+    });
+  }
+  function codeBlock(p) {
+    const box = document.createElement("div");
+    box.className = "code";
+    const head = document.createElement("div");
+    head.className = "code-head";
+    const nm = document.createElement("span");
+    nm.className = "fname";
+    nm.textContent = p.name;
+    const acts = document.createElement("div");
+    acts.className = "code-actions";
+    const copy = document.createElement("button");
+    copy.textContent = "Copy";
+    copy.onclick = () => copyText(p.code, copy);
+    const dl = document.createElement("button");
+    dl.textContent = "Download";
+    dl.onclick = () => saveBlob(new Blob([p.code], { type: "text/plain;charset=utf-8" }), p.name);
+    acts.append(copy, dl);
+    head.append(nm, acts);
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.textContent = p.code;
+    pre.appendChild(code);
+    box.append(head, pre);
+    return box;
+  }
+  function renderRich(container, text) {
+    const parts = parseReply(text);
+    const files = parts.filter((p) => p.type === "code" && p.named);
+    parts.forEach((p) => {
+      if (p.type === "text") {
+        const t = p.text.replace(/^\n+|\n+$/g, "");
+        if (!t) return;
+        const d = document.createElement("div");
+        d.className = "rt";
+        inlineText(d, t);
+        container.appendChild(d);
+      } else container.appendChild(codeBlock(p));
+    });
+    if (parts.some((p) => p.type === "code")) container.classList.add("has-code");
+    if (files.length > 1) {
+      const z = document.createElement("button");
+      z.className = "zipbtn";
+      z.textContent = "Download all " + files.length + " files (.zip)";
+      z.onclick = async () => {
+        try {
+          z.textContent = "Preparing zip...";
+          if (!window.JSZip) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
+          const zip = new window.JSZip();
+          files.forEach((f) => zip.file(f.name, f.code));
+          saveBlob(await zip.generateAsync({ type: "blob" }), "friday-files.zip");
+        } catch (e) { z.textContent = "Couldn't make the zip. Use Download on each file."; return; }
+        z.textContent = "Download all " + files.length + " files (.zip)";
+      };
+      container.appendChild(z);
+    }
+  }
+
   let voiceMode = load(KEYS.voice, "studio"); // "studio" = Groq voice, "phone" = this phone's voice, "off"
   if (voiceMode === true) voiceMode = "studio";
   if (voiceMode === false || !["studio", "phone", "off"].includes(voiceMode)) voiceMode = voiceMode === false ? "off" : "studio";
@@ -347,7 +481,8 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
         d.appendChild(document.createElement("br"));
       }
     }
-    d.appendChild(document.createTextNode(text));
+    if (cls.indexOf("bot") >= 0 && cls.indexOf("pending") < 0 && cls.indexOf("error") < 0) renderRich(d, text);
+    else d.appendChild(document.createTextNode(text));
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
     return d;
@@ -558,7 +693,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
         if (!r.ok) {
           let raw = "";
           try { raw = (await r.json()).error || ""; } catch (e) {}
-          const m = raw.match(/"message"\s*:\s*"([^"]+)"/);
+          const m = raw.match(/"message"\s*:\s*"([^"]*)/);
           throw new Error((m ? m[1] : raw || "server error " + r.status).slice(0, 110));
         }
         return r.blob();
@@ -625,7 +760,13 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
       if (token !== speakToken) return;
       if (!started) {
         studioFailedAt = Date.now();
-        browserSpeak(text, "Studio voice failed (" + (e && e.message ? e.message : "unknown") + "). Using the phone voice.");
+        const why = (e && e.message) || "";
+        const note = /terms/i.test(why)
+          ? "Studio voice needs its terms accepted in Groq. Using the phone voice."
+          : /rate|limit|quota/i.test(why)
+            ? "Studio voice hit its limit. Using the phone voice."
+            : "Studio voice is unavailable (" + why.slice(0, 50) + "). Using the phone voice.";
+        browserSpeak(text, note);
       } else setState("idle");
     }
   }
@@ -802,7 +943,8 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
       const data = await r.json();
       if (!r.ok || !data.reply) throw new Error(data.error || "No response");
       bubble.className = "msg bot";
-      bubble.textContent = data.reply;
+      bubble.textContent = "";
+      renderRich(bubble, data.reply);
       current.messages.push({ role: "assistant", content: data.reply });
       current.updated = Date.now();
       persist();

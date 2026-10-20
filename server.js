@@ -51,6 +51,48 @@ function cleanMemory(m) {
     .slice(0, 60);
 }
 
+function cleanRecent(r) {
+  if (!Array.isArray(r)) return [];
+  return r
+    .filter((c) => c && typeof c.user === "string")
+    .slice(0, 5)
+    .map((c) => ({
+      title: String(c.title || "Chat").slice(0, 60),
+      user: c.user.slice(0, 160),
+      reply: String(c.reply || "").slice(0, 200),
+    }));
+}
+
+// Text to speech with Groq Orpheus. Body: { text }. Returns WAV audio.
+const TTS_MODEL = process.env.TTS_MODEL || "canopylabs/orpheus-v1-english";
+const TTS_VOICE = process.env.TTS_VOICE || "troy"; // male options: troy, daniel, austin
+app.post("/speak", async (req, res) => {
+  try {
+    if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: "GROQ_API_KEY is missing" });
+    const text = String(req.body.text || "").trim().slice(0, 200);
+    if (!text) return res.status(400).json({ error: "text required" });
+    const r = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({ model: TTS_MODEL, voice: TTS_VOICE, input: text, response_format: "wav" }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      console.error("Speak error:", r.status, t.slice(0, 300));
+      return res.status(502).json({ error: "Voice failed: " + t.slice(0, 200) });
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.set("Content-Type", "audio/wav");
+    res.send(buf);
+  } catch (err) {
+    console.error("Speak error:", err.message);
+    res.status(500).json({ error: "Voice error: " + err.message });
+  }
+});
+
 // Body: { message: "latest user message", memory: ["fact", ...] }
 // Returns the updated memory list.
 app.post("/remember", async (req, res) => {
@@ -116,7 +158,12 @@ app.post("/chat", async (req, res) => {
       ? "\n\nThings you know about the user (use them naturally, never list them back unless asked):\n" +
         memory.map((m) => "- " + m).join("\n")
       : "";
-    const full = [{ role: "system", content: FRIDAY_PROMPT + memoryBlock }, ...messages];
+    const recent = cleanRecent(req.body.recent);
+    const recentBlock = recent.length
+      ? "\n\nEarlier conversations with the user, most recent first. Use them for continuity and mention them only when relevant:\n" +
+        recent.map((c) => `- "${c.title}": user said "${c.user}"` + (c.reply ? `; you replied "${c.reply}"` : "")).join("\n")
+      : "";
+    const full = [{ role: "system", content: FRIDAY_PROMPT + memoryBlock + recentBlock }, ...messages];
     const last = messages[messages.length - 1].content || "";
     const wantsSearch = LIVE.test(last);
 

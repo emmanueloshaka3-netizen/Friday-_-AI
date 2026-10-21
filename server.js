@@ -77,6 +77,104 @@ function buildMessages(messages) {
   return { out, imageCount };
 }
 
+// ---------- Photo Studio: turn "make it black and white and crop it square" into edit steps ----------
+const RATIO_NAMES = ["1:1", "4:5", "5:4", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
+const FILTER_NAMES = ["bw", "sepia", "vintage", "warm", "cool", "vivid", "fade", "dramatic", "invert", "none"];
+const COLOR_NAMES = { white: "#ffffff", black: "#000000", yellow: "#ffd400", red: "#ff3b30", orange: "#ff8a3d", blue: "#2f7bff", green: "#2ecc71", pink: "#ff5fa2", purple: "#9b59ff" };
+const clampNum = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v)));
+const goodColor = (c, d) => {
+  if (typeof c !== "string") return d;
+  const t = c.trim().toLowerCase();
+  if (COLOR_NAMES[t]) return COLOR_NAMES[t];
+  return /^#[0-9a-f]{6}$/.test(t) ? t : d;
+};
+
+function sanitizePlan(obj) {
+  const ops = [];
+  const list = obj && Array.isArray(obj.ops) ? obj.ops.slice(0, 12) : [];
+  for (const o of list) {
+    if (!o || typeof o.op !== "string") continue;
+    if (o.op === "rotate") {
+      const d = ((Math.round(Number(o.degrees)) % 360) + 360) % 360;
+      if ([90, 180, 270].includes(d)) ops.push({ op: "rotate", degrees: d });
+    } else if (o.op === "flip") {
+      ops.push({ op: "flip", axis: o.axis === "v" ? "v" : "h" });
+    } else if (o.op === "crop") {
+      if (RATIO_NAMES.includes(o.ratio)) ops.push({ op: "crop", ratio: o.ratio });
+      else if ([o.x, o.y, o.w, o.h].every((n) => Number.isFinite(Number(n)))) {
+        const x = clampNum(o.x, 0, 0.95), y = clampNum(o.y, 0, 0.95);
+        const w = clampNum(o.w, 0.05, 1 - x), h = clampNum(o.h, 0.05, 1 - y);
+        ops.push({ op: "crop", x, y, w, h });
+      }
+    } else if (o.op === "resize") {
+      if (Number.isFinite(Number(o.maxSize))) ops.push({ op: "resize", maxSize: Math.round(clampNum(o.maxSize, 100, 4000)) });
+    } else if (o.op === "adjust") {
+      const a = { op: "adjust" };
+      for (const k of ["brightness", "contrast", "saturation"]) if (Number.isFinite(Number(o[k]))) a[k] = clampNum(o[k], -100, 100);
+      if (Number.isFinite(Number(o.hue))) a.hue = clampNum(o.hue, -180, 180);
+      if (Number.isFinite(Number(o.blur))) a.blur = clampNum(o.blur, 0, 20);
+      if (Object.keys(a).length > 1) ops.push(a);
+    } else if (o.op === "filter") {
+      if (FILTER_NAMES.includes(o.name)) ops.push({ op: "filter", name: o.name });
+    } else if (o.op === "text") {
+      const text = String(o.text || "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 80);
+      if (text) {
+        ops.push({
+          op: "text", text,
+          position: ["top", "center", "bottom"].includes(o.position) ? o.position : "bottom",
+          size: Number.isFinite(Number(o.size)) ? clampNum(o.size, 3, 20) : 8,
+          color: goodColor(o.color, "#ffffff"),
+          stroke: o.stroke !== false,
+        });
+      }
+    } else if (o.op === "border") {
+      ops.push({ op: "border", width: Number.isFinite(Number(o.width)) ? clampNum(o.width, 1, 12) : 4, color: goodColor(o.color, "#ffffff") });
+    } else if (o.op === "round") {
+      ops.push({ op: "round", radius: Number.isFinite(Number(o.radius)) ? clampNum(o.radius, 0, 50) : 50 });
+    }
+  }
+  const note = typeof (obj && obj.note) === "string" ? obj.note.replace(/[\u0000-\u001f]/g, " ").slice(0, 140) : "";
+  return { ops, note };
+}
+
+const EDIT_SYSTEM = [
+  "You turn a photo-editing request into JSON edit steps. Reply with JSON only, no other text.",
+  'Format: {"ops":[...],"note":"short plain summary of what you did"}',
+  "Available ops, applied in order:",
+  '- {"op":"rotate","degrees":90|180|270}',
+  '- {"op":"flip","axis":"h"|"v"}  (h = mirror left-right)',
+  '- {"op":"crop","ratio":"1:1"|"4:5"|"5:4"|"3:2"|"2:3"|"4:3"|"3:4"|"16:9"|"9:16"}  (centered crop)',
+  '- {"op":"crop","x":0-1,"y":0-1,"w":0-1,"h":0-1}  (a region as fractions of the image)',
+  '- {"op":"resize","maxSize":pixels for the longest side}',
+  '- {"op":"adjust","brightness":-100..100,"contrast":-100..100,"saturation":-100..100,"hue":-180..180,"blur":0..20}  (include only what changes; positive = more)',
+  '- {"op":"filter","name":"bw"|"sepia"|"vintage"|"warm"|"cool"|"vivid"|"fade"|"dramatic"|"invert"|"none"}',
+  '- {"op":"text","text":"...","position":"top"|"center"|"bottom","size":3-20,"color":"white|black|yellow|red|orange|blue|green|pink|purple or #rrggbb","stroke":true}',
+  '- {"op":"border","width":1-12,"color":"white"}',
+  '- {"op":"round","radius":0-50}  (50 = circle, good for profile pictures)',
+  "Guidance: 'enhance' or 'make it look better' means a small boost, like contrast 10, saturation 15, brightness 5. 'a bit' means about 10-15, 'a lot' means 40-60.",
+  "Profile picture or avatar means crop 1:1 then round 50. Instagram post means crop 4:5. Story or wallpaper means crop 9:16. YouTube thumbnail means crop 16:9.",
+  "If the request cannot be done with these ops (for example removing an object or changing the background), return an empty ops list and put a short honest explanation in note.",
+].join("\n");
+
+// Body: { instruction: "make it black and white and crop it square" }
+app.post("/edit-plan", async (req, res) => {
+  try {
+    if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: "GROQ_API_KEY is missing on Render." });
+    const instruction = String(req.body.instruction || "").trim().slice(0, 400);
+    if (!instruction) return res.status(400).json({ error: "instruction required" });
+    const raw = await callGroq(MODEL, [
+      { role: "system", content: EDIT_SYSTEM },
+      { role: "user", content: instruction },
+    ], 1200);
+    const match = raw.match(/\{[\s\S]*\}/);
+    const plan = match ? sanitizePlan(JSON.parse(match[0])) : { ops: [], note: raw.replace(/[\u0000-\u001f]/g, " ").slice(0, 140) };
+    res.json(plan);
+  } catch (err) {
+    console.error("Edit plan error:", err.message);
+    res.status(500).json({ error: "Couldn't plan that edit: " + err.message });
+  }
+});
+
 function cleanMemory(m) {
   if (!Array.isArray(m)) return [];
   return m

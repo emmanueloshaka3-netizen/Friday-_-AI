@@ -189,6 +189,38 @@
   .empty-note { color: var(--muted); font-size: 14px; padding: 8px 4px; }
   @media (prefers-reduced-motion: reduce) { .scrim, .panel { transition: none; } }
 
+  /* ---- photo studio ---- */
+  #studio { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--night); }
+  #studio[hidden] { display: none; }
+  .st-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; padding-top: max(12px, env(safe-area-inset-top)); }
+  .st-top strong { font-family: "Syne", sans-serif; font-size: 17px; }
+  .chip.primary { color: #1a0d05; background: var(--ember); border: 0; font-weight: 600; }
+  .st-stage { flex: 1; min-height: 120px; display: grid; place-items: center; padding: 6px 14px; overflow: hidden; background:
+    conic-gradient(#0d1226 25%, #0a0f20 0 50%, #0d1226 0 75%, #0a0f20 0) 0 0 / 22px 22px; }
+  #stCanvas { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
+  .st-ai { display: flex; gap: 8px; padding: 10px 14px 0; }
+  .st-ai input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--deep); border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; }
+  .st-ai input::placeholder { color: #5d667f; }
+  .st-ai button { font: inherit; font-weight: 600; color: #1a0d05; background: var(--ember); border: 0; border-radius: 12px; padding: 0 16px; cursor: pointer; }
+  .st-ai button:disabled { opacity: .5; }
+  .st-note { margin: 6px 14px 0; min-height: 20px; font-size: 13px; color: var(--muted); }
+  .st-tabs { display: flex; gap: 6px; padding: 6px 14px 0; }
+  .st-tabs button { flex: 1; font: inherit; font-size: 14px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 10px; padding: 8px 4px; cursor: pointer; }
+  .st-tabs button[aria-selected="true"] { color: var(--glow); border-color: #5a3a2a; background: #1a1424; }
+  .st-panel { padding: 10px 14px; min-height: 96px; max-height: 26dvh; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+  .st-panel .chip { color: var(--text); }
+  .st-panel .chip[aria-pressed="true"] { color: var(--glow); border-color: #5a3a2a; }
+  .st-row { display: flex; align-items: center; gap: 10px; width: 100%; font-size: 14px; color: var(--muted); }
+  .st-row span { width: 84px; flex: none; }
+  .st-row input[type=range] { flex: 1; accent-color: var(--ember); }
+  .st-row input[type=text], .st-panel input.txt { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--deep); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; }
+  .st-bottom { display: flex; gap: 8px; padding: 8px 14px; padding-bottom: max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+  .st-bottom .chip { flex: 1; text-align: center; padding: 10px 6px; color: var(--text); }
+  .st-bottom select { font: inherit; font-size: 13px; color: var(--text); background: var(--deep); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
+  .gen-img { display: block; width: 100%; max-width: 420px; border-radius: 12px; margin-bottom: 8px; }
+  .gen-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .gen-actions button { font: inherit; font-size: 13px; color: var(--text); background: #151d38; border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+
   /* ---- code blocks and files in replies ---- */
   .msg.has-code { max-width: 100%; width: 100%; }
   .rt { margin: 0; }
@@ -282,6 +314,10 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="1.6"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>
         Photo or screenshot
       </button>
+      <button id="pickEdit">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+        Edit a photo
+      </button>
       <button id="pickDoc">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>
         Document
@@ -290,6 +326,7 @@
     <input id="input" placeholder="Ask Friday anything" autocomplete="off" enterkeyhint="send">
     <button id="send">Send</button>
   </div>
+  <input type="file" id="fileEdit" accept="image/*" hidden>
   <input type="file" id="fileCamera" accept="image/*" capture="environment" hidden>
   <input type="file" id="filePhoto" accept="image/*" multiple hidden>
   <input type="file" id="fileDoc" accept=".pdf,.docx,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yml,.yaml,.log,.java,.c,.cpp,.php,.sql,text/*" hidden>
@@ -306,6 +343,33 @@
       <button class="newchat" id="newChatBtn">New chat</button>
       <div id="chatList"></div>
     </nav>
+  </div>
+
+  <div id="studio" hidden role="dialog" aria-label="Photo Studio">
+    <div class="st-top">
+      <button class="chip" id="stClose">Close</button>
+      <strong>Photo Studio</strong>
+      <button class="chip primary" id="stSave">Save</button>
+    </div>
+    <div class="st-stage"><canvas id="stCanvas"></canvas></div>
+    <div class="st-ai">
+      <input id="stAsk" placeholder="Tell Friday: black and white, crop square..." autocomplete="off" enterkeyhint="go">
+      <button id="stGo">Go</button>
+    </div>
+    <p class="st-note" id="stNote" role="status"></p>
+    <div class="st-tabs" role="tablist">
+      <button role="tab" data-tab="crop" aria-selected="true">Crop</button>
+      <button role="tab" data-tab="filters" aria-selected="false">Filters</button>
+      <button role="tab" data-tab="adjust" aria-selected="false">Adjust</button>
+      <button role="tab" data-tab="text" aria-selected="false">Text</button>
+    </div>
+    <div class="st-panel" id="stPanel"></div>
+    <div class="st-bottom">
+      <button class="chip" id="stUndo">Undo</button>
+      <button class="chip" id="stReset">Reset</button>
+      <button class="chip" id="stSend">Ask Friday</button>
+      <select id="stFormat" aria-label="Save format"><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WEBP</option></select>
+    </div>
   </div>
 
   <div id="memPanel" hidden>
@@ -915,12 +979,413 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
     });
   }
 
+  /* ================= photo studio ================= */
+  const FILTERS = {
+    bw: "grayscale(1) contrast(1.1)",
+    sepia: "sepia(0.9)",
+    vintage: "sepia(0.45) contrast(0.95) saturate(0.85) brightness(1.05)",
+    warm: "sepia(0.25) saturate(1.25) hue-rotate(-12deg) brightness(1.03)",
+    cool: "saturate(1.05) hue-rotate(12deg) brightness(1.02) contrast(1.03)",
+    vivid: "saturate(1.6) contrast(1.12)",
+    fade: "contrast(0.82) brightness(1.12) saturate(0.8)",
+    dramatic: "contrast(1.35) saturate(1.15) brightness(0.92)",
+    invert: "invert(1)"
+  };
+  const FILTER_LABELS = { bw: "Black & white", sepia: "Sepia", vintage: "Vintage", warm: "Warm", cool: "Cool", vivid: "Vivid", fade: "Fade", dramatic: "Dramatic", invert: "Invert" };
+  const RATIOS = { "1:1": [1, 1], "4:5": [4, 5], "5:4": [5, 4], "3:2": [3, 2], "2:3": [2, 3], "4:3": [4, 3], "3:4": [3, 4], "16:9": [16, 9], "9:16": [9, 16] };
+  const newCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v)));
+  const freshState = () => ({ geo: [], filter: null, adjust: { brightness: 0, contrast: 0, saturation: 0, hue: 0, blur: 0 }, deco: [] });
+
+  function applyGeo(src, op) {
+    const w = src.width, h = src.height;
+    if (op.op === "rotate") {
+      const d = ((op.degrees % 360) + 360) % 360;
+      if (!d) return src;
+      const swap = d === 90 || d === 270;
+      const c = newCanvas(swap ? h : w, swap ? w : h);
+      const x = c.getContext("2d");
+      x.translate(c.width / 2, c.height / 2);
+      x.rotate(d * Math.PI / 180);
+      x.drawImage(src, -w / 2, -h / 2);
+      return c;
+    }
+    if (op.op === "flip") {
+      const c = newCanvas(w, h), x = c.getContext("2d");
+      if (op.axis === "v") { x.translate(0, h); x.scale(1, -1); } else { x.translate(w, 0); x.scale(-1, 1); }
+      x.drawImage(src, 0, 0);
+      return c;
+    }
+    if (op.op === "crop") {
+      let sx, sy, sw, sh;
+      if (op.ratio && RATIOS[op.ratio]) {
+        const t = RATIOS[op.ratio][0] / RATIOS[op.ratio][1];
+        if (w / h > t) { sh = h; sw = h * t; } else { sw = w; sh = w / t; }
+        sx = (w - sw) / 2; sy = (h - sh) / 2;
+      } else if ([op.x, op.y, op.w, op.h].every((n) => typeof n === "number")) {
+        sx = op.x * w; sy = op.y * h; sw = op.w * w; sh = op.h * h;
+      } else return src;
+      const c = newCanvas(sw, sh);
+      c.getContext("2d").drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      return c;
+    }
+    if (op.op === "resize") {
+      const m = Math.max(w, h);
+      if (!op.maxSize || m <= op.maxSize) return src;
+      const k = op.maxSize / m, c = newCanvas(w * k, h * k);
+      c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+      return c;
+    }
+    return src;
+  }
+  function filterString(st, width) {
+    const a = st.adjust, parts = [];
+    if (st.filter && FILTERS[st.filter]) parts.push(FILTERS[st.filter]);
+    if (a.brightness) parts.push("brightness(" + (1 + a.brightness / 100) + ")");
+    if (a.contrast) parts.push("contrast(" + (1 + a.contrast / 100) + ")");
+    if (a.saturation) parts.push("saturate(" + (1 + a.saturation / 100) + ")");
+    if (a.hue) parts.push("hue-rotate(" + a.hue + "deg)");
+    if (a.blur) parts.push("blur(" + (a.blur * Math.max(1, width / 800)).toFixed(2) + "px)");
+    return parts.join(" ");
+  }
+  function drawText(c, op) {
+    const x = c.getContext("2d");
+    const size = Math.max(10, (op.size || 8) / 100 * c.width);
+    x.font = "800 " + size + "px 'Instrument Sans', system-ui, sans-serif";
+    x.textAlign = "center";
+    x.textBaseline = "middle";
+    const maxW = c.width * 0.9, lines = [];
+    let line = "";
+    String(op.text).split(/\s+/).forEach((w) => {
+      const t = line ? line + " " + w : w;
+      if (x.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+    });
+    if (line) lines.push(line);
+    const lh = size * 1.2, total = lh * lines.length;
+    const cy = op.position === "top" ? size * 0.8 + total / 2 : op.position === "center" ? c.height / 2 : c.height - size * 0.8 - total / 2;
+    x.lineJoin = "round";
+    x.lineWidth = size * 0.14;
+    x.strokeStyle = "rgba(0,0,0,.75)";
+    x.fillStyle = op.color || "#ffffff";
+    lines.forEach((l, i) => {
+      const y = cy - total / 2 + lh * (i + 0.5);
+      if (op.stroke !== false) x.strokeText(l, c.width / 2, y);
+      x.fillText(l, c.width / 2, y);
+    });
+  }
+  function renderState(base, st) {
+    let c = base;
+    st.geo.forEach((op) => { c = applyGeo(c, op); });
+    const f = filterString(st, c.width);
+    const n = newCanvas(c.width, c.height); // always work on a copy, never the original
+    const nx = n.getContext("2d");
+    if (f) nx.filter = f;
+    nx.drawImage(c, 0, 0);
+    c = n;
+    st.deco.forEach((op) => {
+      if (op.op === "text") drawText(c, op);
+      else if (op.op === "border") {
+        const b = Math.round(Math.min(c.width, c.height) * clamp(op.width || 4, 1, 12) / 100);
+        const nb = newCanvas(c.width + b * 2, c.height + b * 2), x = nb.getContext("2d");
+        x.fillStyle = op.color || "#ffffff";
+        x.fillRect(0, 0, nb.width, nb.height);
+        x.drawImage(c, b, b);
+        c = nb;
+      } else if (op.op === "round") {
+        const r = Math.min(c.width, c.height) * clamp(op.radius == null ? 50 : op.radius, 0, 50) / 100;
+        const nr = newCanvas(c.width, c.height), x = nr.getContext("2d");
+        x.beginPath();
+        if (x.roundRect) x.roundRect(0, 0, c.width, c.height, r);
+        else x.rect(0, 0, c.width, c.height);
+        x.clip();
+        x.drawImage(c, 0, 0);
+        c = nr;
+      }
+    });
+    return c;
+  }
+  function applyPlan(st, ops) {
+    let did = 0;
+    ops.forEach((o) => {
+      if (!o || !o.op) return;
+      if (["rotate", "flip", "crop", "resize"].includes(o.op)) { st.geo.push(o); did++; }
+      else if (o.op === "filter") { st.filter = o.name === "none" || !FILTERS[o.name] ? null : o.name; did++; }
+      else if (o.op === "adjust") {
+        ["brightness", "contrast", "saturation"].forEach((k) => { if (typeof o[k] === "number") st.adjust[k] = clamp(st.adjust[k] + o[k], -100, 100); });
+        if (typeof o.hue === "number") st.adjust.hue = clamp(st.adjust.hue + o.hue, -180, 180);
+        if (typeof o.blur === "number") st.adjust.blur = clamp(o.blur, 0, 20);
+        did++;
+      } else if (["text", "border", "round"].includes(o.op)) { st.deco.push(o); did++; }
+    });
+    return did;
+  }
+
+  /* ---- studio screen ---- */
+  const studio = $("studio"), stCanvas = $("stCanvas"), stNote = $("stNote"), stPanel = $("stPanel");
+  let stFull = null, stPrev = null, stState = freshState(), stHist = [], stTab = "crop";
+
+  function stDraw() {
+    if (!stPrev) return;
+    const out = renderState(stPrev, stState);
+    stCanvas.width = out.width;
+    stCanvas.height = out.height;
+    stCanvas.getContext("2d").drawImage(out, 0, 0);
+  }
+  function stPush() { stHist.push(JSON.stringify(stState)); if (stHist.length > 40) stHist.shift(); }
+  function stDo(fn) { stPush(); fn(); stDraw(); stBuild(); }
+  function fitInto(src, max) {
+    const k = Math.min(1, max / Math.max(src.width, src.height));
+    const c = newCanvas(src.width * k, src.height * k);
+    c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+    return c;
+  }
+  function openStudio(source, ask) {
+    const img = new Image();
+    img.onload = () => {
+      stFull = fitInto(img, 2400);
+      stPrev = fitInto(img, 1000);
+      stState = freshState();
+      stHist = [];
+      stNote.textContent = "";
+      $("stAsk").value = "";
+      studio.hidden = false;
+      stTab = "crop";
+      stBuild();
+      stDraw();
+      if (ask) { $("stAsk").value = ask; stAskFriday(); }
+    };
+    img.onerror = () => setState("idle", "Couldn't open that image.");
+    img.src = typeof source === "string" ? source : URL.createObjectURL(source);
+  }
+  async function stAskFriday() {
+    const q = $("stAsk").value.trim();
+    if (!q) return;
+    $("stGo").disabled = true;
+    stNote.textContent = "Friday is working on it...";
+    try {
+      const r = await fetch("/edit-plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instruction: q }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Failed");
+      if (!d.ops || !d.ops.length) { stNote.textContent = d.note || "I couldn't turn that into an edit. Try the tools below."; }
+      else {
+        stPush();
+        applyPlan(stState, d.ops);
+        stDraw();
+        stBuild();
+        stNote.textContent = d.note || "Done.";
+        $("stAsk").value = "";
+      }
+    } catch (e) { stNote.textContent = (e && e.message) || "Couldn't reach Friday."; }
+    $("stGo").disabled = false;
+  }
+  function chipBtn(label, onClick, pressed) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = label;
+    if (pressed !== undefined) b.setAttribute("aria-pressed", String(!!pressed));
+    b.onclick = onClick;
+    return b;
+  }
+  function slider(label, key, min, max) {
+    const row = document.createElement("div");
+    row.className = "st-row";
+    const s = document.createElement("span");
+    s.textContent = label;
+    const r = document.createElement("input");
+    r.type = "range"; r.min = min; r.max = max; r.value = stState.adjust[key];
+    r.setAttribute("aria-label", label);
+    let queued = false;
+    const begin = () => stPush();
+    r.addEventListener("pointerdown", begin);
+    r.addEventListener("touchstart", begin, { passive: true });
+    r.addEventListener("input", () => {
+      stState.adjust[key] = Number(r.value);
+      if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; stDraw(); }); }
+    });
+    row.append(s, r);
+    return row;
+  }
+  function stBuild() {
+    stPanel.innerHTML = "";
+    studio.querySelectorAll(".st-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === stTab)));
+    if (stTab === "crop") {
+      stPanel.append(
+        chipBtn("Rotate left", () => stDo(() => stState.geo.push({ op: "rotate", degrees: 270 }))),
+        chipBtn("Rotate right", () => stDo(() => stState.geo.push({ op: "rotate", degrees: 90 }))),
+        chipBtn("Flip", () => stDo(() => stState.geo.push({ op: "flip", axis: "h" }))),
+        chipBtn("Flip up/down", () => stDo(() => stState.geo.push({ op: "flip", axis: "v" })))
+      );
+      ["1:1", "4:5", "16:9", "9:16", "3:2"].forEach((r) => stPanel.append(chipBtn("Crop " + r, () => stDo(() => stState.geo.push({ op: "crop", ratio: r })))));
+      stPanel.append(
+        chipBtn("Circle", () => stDo(() => stState.deco.push({ op: "round", radius: 50 }))),
+        chipBtn("Rounded corners", () => stDo(() => stState.deco.push({ op: "round", radius: 12 }))),
+        chipBtn("White border", () => stDo(() => stState.deco.push({ op: "border", width: 4, color: "#ffffff" })))
+      );
+    } else if (stTab === "filters") {
+      stPanel.append(chipBtn("Original", () => stDo(() => { stState.filter = null; }), !stState.filter));
+      Object.keys(FILTERS).forEach((k) => stPanel.append(chipBtn(FILTER_LABELS[k], () => stDo(() => { stState.filter = k; }), stState.filter === k)));
+    } else if (stTab === "adjust") {
+      stPanel.append(slider("Brightness", "brightness", -100, 100), slider("Contrast", "contrast", -100, 100), slider("Colour", "saturation", -100, 100), slider("Blur", "blur", 0, 20));
+    } else if (stTab === "text") {
+      const t = document.createElement("input");
+      t.className = "txt"; t.type = "text"; t.placeholder = "Type your caption"; t.maxLength = 80;
+      t.style.width = "100%";
+      let pos = "bottom", color = "#ffffff", size = 8;
+      const posRow = document.createElement("div");
+      posRow.className = "st-row";
+      const sp = document.createElement("span"); sp.textContent = "Position";
+      const sel = document.createElement("select");
+      sel.className = "chip"; sel.setAttribute("aria-label", "Text position");
+      [["bottom", "Bottom"], ["center", "Middle"], ["top", "Top"]].forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.appendChild(o); });
+      sel.onchange = () => { pos = sel.value; };
+      posRow.append(sp, sel);
+      const sizeRow = document.createElement("div");
+      sizeRow.className = "st-row";
+      const ss = document.createElement("span"); ss.textContent = "Size";
+      const sr = document.createElement("input");
+      sr.type = "range"; sr.min = 3; sr.max = 20; sr.value = size; sr.setAttribute("aria-label", "Text size");
+      sr.oninput = () => { size = Number(sr.value); };
+      sizeRow.append(ss, sr);
+      const colors = document.createElement("div");
+      colors.className = "st-row";
+      const cs = document.createElement("span"); cs.textContent = "Colour";
+      colors.appendChild(cs);
+      [["White", "#ffffff"], ["Black", "#000000"], ["Yellow", "#ffd400"], ["Orange", "#ff8a3d"]].forEach(([l, v]) => {
+        const b = chipBtn(l, () => { color = v; colors.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); }, v === color);
+        colors.appendChild(b);
+      });
+      stPanel.append(t, posRow, sizeRow, colors, chipBtn("Add text", () => {
+        const v = t.value.trim();
+        if (!v) { stNote.textContent = "Type some text first."; return; }
+        stDo(() => stState.deco.push({ op: "text", text: v, position: pos, size, color, stroke: true }));
+      }));
+    }
+  }
+  studio.querySelectorAll(".st-tabs button").forEach((b) => { b.onclick = () => { stTab = b.dataset.tab; stBuild(); }; });
+  $("stClose").onclick = () => { studio.hidden = true; stFull = stPrev = null; };
+  $("stGo").onclick = stAskFriday;
+  $("stAsk").addEventListener("keydown", (e) => { if (e.key === "Enter") stAskFriday(); });
+  $("stUndo").onclick = () => {
+    if (!stHist.length) { stNote.textContent = "Nothing to undo."; return; }
+    stState = JSON.parse(stHist.pop());
+    stDraw(); stBuild(); stNote.textContent = "";
+  };
+  $("stReset").onclick = () => { stPush(); stState = freshState(); stDraw(); stBuild(); stNote.textContent = "Back to the original."; };
+  function stExport(type, quality) {
+    return new Promise((resolve) => renderState(stFull, stState).toBlob(resolve, type, quality));
+  }
+  $("stSave").onclick = async () => {
+    if (!stFull) return;
+    let fmt = $("stFormat").value;
+    if (stState.deco.some((o) => o.op === "round") && fmt === "jpg") fmt = "png"; // rounded corners need transparency
+    const type = fmt === "png" ? "image/png" : fmt === "webp" ? "image/webp" : "image/jpeg";
+    const blob = await stExport(type, 0.92);
+    if (!blob) { stNote.textContent = "Couldn't save that image."; return; }
+    saveBlob(blob, "friday-edit." + fmt);
+    stNote.textContent = "Saved to your downloads as " + fmt.toUpperCase() + ".";
+  };
+  $("stSend").onclick = () => {
+    if (!stFull) return;
+    const out = fitInto(renderState(stFull, stState), 1280);
+    pending.images = pending.images.slice(0, MAX_IMAGES - 1);
+    pending.images.push({ name: "edited.jpg", dataUrl: out.toDataURL("image/jpeg", 0.85) });
+    renderTray();
+    studio.hidden = true; stFull = stPrev = null;
+    input.focus();
+  };
+  $("pickEdit").onclick = () => { toggleMenu(false); $("fileEdit").click(); };
+  $("fileEdit").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) openStudio(f); };
+
+  /* ================= drawing pictures from a description ================= */
+  const DRAW_RE = /^\s*(?:\/(?:image|draw|imagine)\b|(?:please\s+|can you\s+|could you\s+)?(?:(?:draw|paint|illustrate|imagine)\s+(?:me\s+|us\s+)?(?:an?\s+|the\s+|some\s+|my\s+)(?!(?:conclusion|comparison|line|table|diagram|flowchart|chart|graph|parallel|plan)\b)|(?:draw|paint|illustrate)\s+me\s+|(?:generate|create|make|design)\s+(?:me\s+)?(?:an?\s+|the\s+|some\s+)?(?:image|picture|photo|logo|wallpaper|poster|art|artwork|illustration|drawing|painting|portrait|icon|banner|cartoon|avatar)\b))/i;
+  const EDIT_RE = /\b(edit|crop|rotate|flip|mirror|filter|black and white|grayscale|greyscale|sepia|brighten|darken|brighter|darker|blur|resize|compress|caption|watermark|add text|enhance|retouch|vintage|sharpen)\b/i;
+
+  function aspectFor(p) {
+    if (/\b(wallpaper|portrait|phone|story|vertical|poster)\b/i.test(p)) return [768, 1344];
+    if (/\b(banner|landscape|wide|youtube|thumbnail|desktop|cover)\b/i.test(p)) return [1344, 768];
+    return [1024, 1024];
+  }
+  async function drawImage(text) {
+    busy = true; sendBtn.disabled = true;
+    stopSpeaking(true);
+    const userMsg = { role: "user", content: text };
+    addMsg(text, "user", userMsg);
+    current.messages.push(userMsg);
+    if (!current.title) current.title = text.slice(0, 40);
+    current.updated = Date.now();
+    const prompt = text.replace(/^\s*\/(?:image|draw|imagine)\b\s*/i, "").trim() || text;
+    const bubble = addMsg("Painting that for you...", "bot pending");
+    setState("thinking", "Painting your picture. This can take up to a minute.");
+    const make = async () => {
+      const [w, hgt] = aspectFor(prompt);
+      const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt) +
+        "?width=" + w + "&height=" + hgt + "&nologo=true&model=flux&seed=" + Math.floor(Math.random() * 1e9);
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 90000);
+      try {
+        const r = await fetch(url, { signal: ctl.signal });
+        if (!r.ok) throw new Error("The picture service answered with " + r.status + ".");
+        const blob = await r.blob();
+        if (!blob.type.startsWith("image/")) throw new Error("The picture service didn't return an image.");
+        return blob;
+      } finally { clearTimeout(timer); }
+    };
+    const show = (blob) => {
+      bubble.className = "msg bot";
+      bubble.textContent = "";
+      const objUrl = URL.createObjectURL(blob);
+      const im = document.createElement("img");
+      im.className = "gen-img";
+      im.alt = prompt.slice(0, 120);
+      im.src = objUrl;
+      const acts = document.createElement("div");
+      acts.className = "gen-actions";
+      const mk = (label, fn) => { const b = document.createElement("button"); b.textContent = label; b.onclick = fn; return b; };
+      acts.append(
+        mk("Download", () => saveBlob(blob, "friday-image.jpg")),
+        mk("Edit", () => openStudio(objUrl)),
+        mk("Redraw", async () => {
+          acts.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+          try { bubble.textContent = ""; bubble.className = "msg bot pending"; bubble.textContent = "Painting again..."; show(await make()); }
+          catch (e) { bubble.className = "msg bot error"; bubble.textContent = "Couldn't redraw. " + e.message; }
+        })
+      );
+      bubble.append(im, acts);
+      log.scrollTop = log.scrollHeight;
+    };
+    try {
+      show(await make());
+      current.messages.push({ role: "assistant", content: "(Drew a picture: " + prompt.slice(0, 120) + ")" });
+      current.updated = Date.now();
+      persist();
+      setState("idle");
+    } catch (e) {
+      bubble.className = "msg bot error";
+      const why = e && e.name === "AbortError" ? "It took too long." : (e && e.message) || "";
+      bubble.textContent = "Couldn't draw that right now. " + why + " The free picture service can be busy, so try again in a minute.";
+      current.messages.pop();
+      setState("idle");
+    } finally {
+      busy = false; sendBtn.disabled = false;
+    }
+  }
+
   /* ================= chat ================= */
   async function send(text) {
     text = (text || "").trim();
     const hasAtt = pending.images.length > 0 || !!pending.doc;
     if ((!text && !hasAtt) || busy) return;
+    const typed = !!text;
     if (!text) text = pending.images.length ? "What's in this?" : "Summarize this document for me.";
+    if (typed && pending.images.length && !pending.doc && EDIT_RE.test(text)) {
+      const first = pending.images[0].dataUrl;
+      pending = { images: [], doc: null };
+      renderTray();
+      input.value = "";
+      openStudio(first, text);
+      return;
+    }
+    if (typed && !hasAtt && DRAW_RE.test(text)) { input.value = ""; drawImage(text); return; }
     busy = true; sendBtn.disabled = true;
     input.value = "";
     stopSpeaking(true);
